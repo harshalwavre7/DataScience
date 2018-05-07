@@ -72,4 +72,14 @@ datax = data[data['Gender']=='M']
 ## Join two columns 
 data['Policy'] = data[['policynum','policyseq']].apply(lambda x : '-'.join(x.astype(str)),axis=1)
 
+#### Convert Multiple Columns into one 
+##Using Ravel Flatten
+x2 = pd.concat([titanic_train,pd.Series(titanic_train.values.ravel('F'))],axis=1)
+## Also Melt
+x1 = pd.melt(titanic_train)
+
+
+
+
+
 
