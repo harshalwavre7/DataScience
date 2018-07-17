@@ -78,7 +78,11 @@ x2 = pd.concat([titanic_train,pd.Series(titanic_train.values.ravel('F'))],axis=1
 ## Also Melt
 x1 = pd.melt(titanic_train)
 
-
+df.sort_values('value')
+tmp = df.groupby('group').size()
+rank = tmp.map(range)
+rank =[item for sublist in rank for item in sublist]
+df['rank'] = rank
 
 
 
