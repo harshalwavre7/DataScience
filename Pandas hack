@@ -85,5 +85,193 @@ rank =[item for sublist in rank for item in sublist]
 df['rank'] = rank
 
 
+""" Box Plot """
+""" Box basic plot is used to check the distribution / saturation of data """
+""" Input Required x = Column name data = dataframe """
+def box_basic_plot(x,data):
+    import seaborn as sns
+    plot = sns.boxplot(x=data[x],data=data)
+    plot.set_title("Box Plot of "+" " + x, 
+                 fontsize=18)    
+    fig = plot.get_figure()
+    fig.savefig(x+ "_Box_Plot"+".png")
+box_basic_plot('PaidTotal',premium_non_zero)
 
+""" Box Plot Group """
+""" Box basic plot is used to check the distribution / saturation of data across group """
+""" Input Required x = continuous column y = column used for grouping(category) name data = dataframe """
+def box_group_plot(x,y,data):
+    import seaborn as sns
+    plot = sns.boxplot(x=data[x],y=data[y],data=data)
+    plot.set_title("Box Plot "+" " + x +" "+"Vs"+" "+y, 
+                 fontsize=18)    
+    fig = plot.get_figure()
+    fig.savefig(x+ "_Box_Group_Plot"+".png")
+box_group_plot('ClaimStatus','PaidTotal',premium_non_zero)
+
+""" Scatter Plot """
+""" Check the relationship between two continuous variables in the data """
+""" Input Required x = continous column y = continous column data = dataframe """
+def scatter_basic_plot(x,y,data):
+    import seaborn as sns
+    plot = sns.regplot(x=data[x], y=data[y], fit_reg=False)
+    plot.set_title("Scatter Plot of "+" " + x +" "+"Vs"+" "+y, 
+                 fontsize=18)    
+    fig = plot.get_figure()
+    fig.savefig(x+ y + "_Scatter_Plot"+".png")
+scatter_basic_plot('Violations_Points_Driver1_main','PaidTotal',premium_non_zero)    
+
+""" Distribution Plot """
+""" To check the overall distribution of data """
+""" Input Required x = continuous variable data = dataframe """
+def distribution_plot(x,data):
+    import seaborn as sns
+    plot = sns.distplot (data[x])
+    plot.set_title("Distribution Plot of "+" "+x, 
+                 fontsize=18)    
+    fig = plot.get_figure()
+    fig.savefig(x+"_Distribution_Plot"+".png")
+distribution_plot('PaidTotal',premium_non_zero)    
+
+""" Count Plot """
+""" Check the count across groups without value on bar graphs with ungrouped column names"""
+""" Input Required x = discrete category column y = column used for grouping(category) name data = dataframe """
+def count_plot(x,y,data):
+    import seaborn as sns
+    plot = sns.countplot(x=data[x],hue=data[y],data=data)
+    plot.set_title("Count Plot "+" " + x +" "+"Vs"+" "+y, 
+                 fontsize=18)
+    
+    fig = plot.get_figure()
+    fig.savefig(x+"_Count_Plot"+".png")
+count_plot('CoverageLiability','ClaimStatus',premium_non_zero)
+
+""" Count Plot """
+""" Check the count across groups without value on bar graphs with grouped column name"""
+""" Input Required x = discrete category column y = column used for grouping(category) name data = dataframe """
+def count_group_plot(x,y,data):
+#    test = data.groupby([x,y],sort=False).size().unstack()
+    test = data.groupby([x,y],sort=False).size()
+    ax = test.plot.bar(width=.8,legend=False,rot=0)
+    ax.set_title("Count Plot "+" " + x +" "+"Vs"+" "+y, 
+                 fontsize=18)
+    
+    for i, v in test.reset_index().iterrows():
+#        print(i,v[0],v[1])
+        plot = ax.text(i,v[0],v[0],
+#                       i,v[1],v[1],
+                       color='black')
+        
+    fig = plot.get_figure()
+    fig.savefig(x+y+"_Count_Group_Plot"+".png")
+count_group_plot('CoverageLiability','ClaimStatus',premium_non_zero)     
+
+""" Count Plot """
+""" Check the count across groups with value on bar graphs with ungrouped column name"""
+""" Input Required x = discrete category column y = column used for grouping(category) name data = dataframe """
+def count_group_new_plot(x,y,data):
+    test = data.groupby([x,y],sort=False).size().unstack()
+    test.rename(columns={
+            0:test.columns[0],
+            1:test.columns[1]
+            },inplace=True)
+    ax = test[[0,1]].plot(kind='bar',
+                  figsize=(15,7), color=['dodgerblue', 'slategray'], rot=0,fontsize=13)
+    ax.set_title("Count Plot "+" " + x +" "+"Vs"+" "+y, 
+                 fontsize=18)
+    #yu = premium_non_zero.groupby(['CoverageLiability','ClaimStatus'],sort=False).size().values
+    #ax.set_yticks(yu.tolist())
+    x_offset = -0.03
+    y_offset = 0.02
+    # set individual bar lables using above list
+    for p in ax.patches:
+        b = p.get_bbox()
+        val = "{:.0f}".format(b.y1 + b.y0)        
+        plot = ax.annotate(val, ((b.x0 + b.x1)/2 + x_offset, b.y1 + y_offset))
+    fig = plot.get_figure()
+    fig.savefig(x+y+"_Count_Group_Plot"+".png")
+count_group_new_plot('CoverageLiability','ClaimStatus',premium_non_zero)     
+
+
+#speed = [0.1, 17.5, 40, 48, 52, 69, 88]
+#lifespan = [2, 8, 70, 1.5, 25, 12, 28]
+#index = ['snail', 'pig', 'elephant',
+#          'rabbit', 'giraffe', 'coyote', 'horse']
+#df = pd.DataFrame({'speed': speed,
+#                   'lifespan': lifespan}, index=index)
+#test = premium_non_zero.groupby(['CoverageLiability','ClaimStatus'],sort=False).size().unstack()
+#ax = test.plot.bar(rot=0)
+#
+#
+#test = premium_non_zero.groupby(['CoverageLiability','ClaimStatus'],sort=False).size().to_frame()
+#ax = test.plot.bar(width=.8,legend=False,rot=0)
+#for i, v in test.reset_index().iterrows():
+#    ax.text(i, v[0] + 0.2 , v[0], color='red')
+
+import numpy as np
+#df=pd.DataFrame({'A':np.random.rand(2)-1,'B':np.random.rand(2)},index=['val1','val2'] )
+#ax = df.plot(kind='bar', color=['r','b']) 
+#x_offset = -0.03
+#y_offset = 0.02
+#for p in ax.patches:
+#    b = p.get_bbox()
+#    val = "{:+.2f}".format(b.y1 + b.y0)        
+#    ax.annotate(val, ((b.x0 + b.x1)/2 + x_offset, b.y1 + y_offset))
+""" Correlation Plot """
+""" Correaltion matrix of the Numerical variables in the given dataset """
+""" Input Required df = dataframe """
+def corr_plot(df,size=10):
+    import seaborn as sns
+#    age = data_claim[['Age1','Age2','Age3']]  Written to test the correlation plot 
+#    corr = age.corr()
+    corr = df.corr()
+    import matplotlib.pyplot as plt
+    # Generate a mask for the upper triangle
+    mask = np.zeros_like(corr, dtype=np.bool)
+    mask[np.triu_indices_from(mask)] = True
+    
+    # Set up the matplotlib figure
+    f, ax = plt.subplots(figsize=(11, 9))
+    
+    # Generate a custom diverging colormap
+    cmap = sns.diverging_palette(220, 10, as_cmap=True)
+    
+    # Draw the heatmap with the mask and correct aspect ratio
+    plot = sns.heatmap(corr, mask=mask, cmap=cmap, vmax=.3, center=0,
+                square=True, linewidths=.5, cbar_kws={"shrink": .5})
+    plot.set_title("Correlation Plot of Numeric Variables", 
+                 fontsize=18)
+    fig = plot.get_figure()
+    fig.savefig("Correlation_Plot"+".png")
+corr_plot(age)
+
+""" Probability Plot """
+""" Probability plot used to check the normality of data """
+""" Input Required x = Column name data = dataframe """
+def probability_plot(x,data):
+    from scipy import stats
+    import matplotlib.pyplot as plt
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    res = stats.probplot(data[x], plot=ax)
+    ax.set_title("Probabilty plot for "+x) 
+    fig = ax.get_figure()
+    fig.savefig("Probability_Plot"+".png")
+probability_plot('Age1',data_claim)
+
+""" Logarithmic Probability Plot """
+""" Probability plot used to check the normality of data on the log of the continuous variable """
+""" Input Required x = Column name data = dataframe """
+def log_probability_plot(x,data):
+    from scipy import stats
+    import matplotlib.pyplot as plt
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+#    x = stats.loggamma.rvs(c=2.5)
+    res = stats.probplot(data[x], dist=stats.loggamma, sparams=(2.5,), plot=ax)
+#    res = stats.probplot(data_claim['Age1'], dist=stats.loggamma, sparams=(2.5,), plot=ax)
+    ax.set_title("Probplot for loggamma dist with shape parameter 2.5 for "+ x)    
+    fig = ax.get_figure()
+    fig.savefig("Logarithmic _Probability_Plot"+".png")    
+log_probability_plot('Age1',data_claim)
 
