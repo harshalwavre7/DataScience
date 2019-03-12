@@ -275,3 +275,51 @@ def log_probability_plot(x,data):
     fig.savefig("Logarithmic _Probability_Plot"+".png")    
 log_probability_plot('Age1',data_claim)
 
+def pandas_classification_report(y_true, y_pred,model_name,type_col,sample_type):
+    metrics_summary = precision_recall_fscore_support(
+            y_true=y_true, 
+            y_pred=y_pred)
+
+    avg = list(precision_recall_fscore_support(
+            y_true=y_true, 
+            y_pred=y_pred,
+            average='weighted'))
+    
+    y_test = y_true
+    metrics_sum_index = ['precision', 'recall', 'f1-score', 'support']
+    class_report_df = pd.DataFrame(
+        list(metrics_summary),
+        index=metrics_sum_index)
+    class_report_df = class_report_df.round(2)
+    support = class_report_df.loc['support']
+    total = support.sum() 
+    avg[-1] = total
+    
+    class_report_df['avg / total'] = avg
+        
+    class_report_df['Blank'] = ['','','','']
+    
+    
+    class_report_df_T = class_report_df.T
+    class_report_df_T['model_name'] = model_name
+    class_report_df_T['Type_Col']=type_col
+    class_report_df_T['Sampling_type']= sample_type
+    
+    class_report_df_T.index
+    class_report_df_T = class_report_df_T.reset_index()
+    class_report_df_T.loc[3] = ['','','','','','','','']
+    cnf_mat = confusion_matrix(y_test,y_pred) 
+    df_mat = pd.DataFrame(cnf_mat)
+    class_report_df_T['0_predicted'] = df_mat[0]
+    class_report_df_T['1_predicted'] = df_mat[1]
+    score = accuracy_score(y_test,y_pred)
+    class_report_df_T['Accuracy_Score']=[score*100,'','','']
+#    for x in class_report_df_T.columns.tolist():
+#    class_report_df_T = class_report_df_T.round(2)
+    return class_report_df_T
+
+Example
+
+output=pandas_classification_report(y_test,y_pred,"LightGBM","31 cols","None")
+
+results = results.append(output) 
