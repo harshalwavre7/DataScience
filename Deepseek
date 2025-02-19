@@ -1,0 +1,134 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, udf
+from pyspark.sql.types import DoubleType
+import numpy as np
+from pyspark.mllib.linalg.distributed import IndexedRow, IndexedRowMatrix
+from pyspark.mllib.linalg import Vectors
+
+# Initialize Spark session
+spark = SparkSession.builder \
+    .appName("HSIC on PySpark") \
+    .getOrCreate()
+
+# Function to compute pairwise distances (Gaussian kernel)
+def gaussian_kernel(x, y, sigma):
+    return np.exp(-0.5 * np.sum((x - y) ** 2) / (sigma ** 2))
+
+# UDF for Gaussian kernel
+gaussian_kernel_udf = udf(gaussian_kernel, DoubleType())
+
+# Function to compute the Gram matrix using sampling
+def compute_gram_matrix(df, sigma, sample_fraction=0.1):
+    """
+    Compute the Gram matrix for a PySpark DataFrame using a Gaussian kernel and sampling.
+    """
+    # Sample the DataFrame to reduce the number of pairs
+    sampled_df = df.sample(fraction=sample_fraction, seed=42)
+    
+    # Collect sampled data to the driver (small dataset)
+    sampled_data = sampled_df.select("features").rdd.map(lambda row: row["features"]).collect()
+    
+    # Compute pairwise distances for the sampled data
+    n = len(sampled_data)
+    gram_matrix = np.zeros((n, n))
+    for i in range(n):
+        for j in range(i, n):
+            gram_matrix[i, j] = gaussian_kernel(sampled_data[i], sampled_data[j], sigma)
+            gram_matrix[j, i] = gram_matrix[i, j]  # Symmetric matrix
+    
+    # Convert to a distributed IndexedRowMatrix
+    indexed_rows = spark.sparkContext.parallelize(
+        [IndexedRow(i, Vectors.dense(gram_matrix[i])) for i in range(n)]
+    )
+    return IndexedRowMatrix(indexed_rows)
+
+# Function to center the Gram matrix
+def center_gram_matrix(gram_matrix):
+    """
+    Center the Gram matrix using the centering matrix.
+    """
+    n = gram_matrix.numRows()
+    identity = IndexedRowMatrix(
+        gram_matrix.rows.map(lambda row: IndexedRow(row.index, Vectors.dense([1.0 if i == row.index else 0.0 for i in range(n)])))
+    )
+    unit = IndexedRowMatrix(
+        gram_matrix.rows.map(lambda row: IndexedRow(row.index, Vectors.dense([1.0 / n for _ in range(n)]))
+    )
+    H = identity.subtract(unit)
+    return gram_matrix.multiply(H)
+
+# Function to compute HSIC for two DataFrames
+def HSIC(df_x, df_y, sigma_x=None, sigma_y=None, sample_fraction=0.1):
+    """
+    Compute HSIC for two PySpark DataFrames using sampling.
+    """
+    # Compute Gram matrices
+    gram_x = compute_gram_matrix(df_x, sigma_x, sample_fraction)
+    gram_y = compute_gram_matrix(df_y, sigma_y, sample_fraction)
+    
+    # Center Gram matrices
+    gram_x_centered = center_gram_matrix(gram_x)
+    gram_y_centered = center_gram_matrix(gram_y)
+    
+    # Compute HSIC
+    n = gram_x.numRows()
+    hsic_value = gram_x_centered.multiply(gram_y_centered).rows.map(
+        lambda row: row.vector.toArray().sum()
+    ).sum() / (n ** 2)
+    
+    return hsic_value
+
+# Function to compute dHSIC for multiple DataFrames
+def dHSIC(*argv, sigma_list=None, sample_fraction=0.1):
+    """
+    Compute dHSIC for multiple PySpark DataFrames using sampling.
+    """
+    assert len(argv) > 1, "dHSIC requires at least two arguments"
+    
+    if len(argv) == 2:
+        return HSIC(argv[0], argv[1], sigma_list[0] if sigma_list else None, sigma_list[1] if sigma_list else None, sample_fraction)
+    
+    # Compute Gram matrices for all DataFrames
+    gram_matrices = [
+        compute_gram_matrix(df, sigma_list[i] if sigma_list else None, sample_fraction)
+        for i, df in enumerate(argv)
+    ]
+    
+    # Center Gram matrices
+    gram_matrices_centered = [center_gram_matrix(gram) for gram in gram_matrices]
+    
+    # Compute dHSIC
+    n = gram_matrices[0].numRows()
+    term1 = gram_matrices_centered[0]
+    for gram in gram_matrices_centered[1:]:
+        term1 = term1.multiply(gram)
+    
+    term1_value = term1.rows.map(lambda row: row.vector.toArray().sum()).sum() / (n ** 2)
+    
+    term2 = 1.0
+    for gram in gram_matrices_centered:
+        term2 *= gram.rows.map(lambda row: row.vector.toArray().sum()).sum() / (n ** 2)
+    
+    term3 = 2.0 / n
+    for gram in gram_matrices_centered:
+        term3 *= gram.rows.map(lambda row: row.vector.toArray().sum()).sum() / n
+    
+    dhsic_value = term1_value + term2 - term3
+    return dhsic_value
+
+# Example usage
+if __name__ == "__main__":
+    # Sample data
+    data_x = spark.createDataFrame([(i, Vectors.dense(np.random.rand(10))) for i in range(1000000)], ["id", "features"])
+    data_y = spark.createDataFrame([(i, Vectors.dense(np.random.rand(10))) for i in range(1000000)], ["id", "features"])
+    
+    # Compute HSIC
+    hsic_value = HSIC(data_x, data_y, sample_fraction=0.1)
+    print("HSIC value:", hsic_value)
+    
+    # Compute dHSIC
+    dhsic_value = dHSIC(data_x, data_y, sample_fraction=0.1)
+    print("dHSIC value:", dhsic_value)
+    
+    # Stop Spark session
+    spark.stop()
