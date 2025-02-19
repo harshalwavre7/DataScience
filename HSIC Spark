@@ -15,13 +15,13 @@ def hsic_gam(df_X, df_Y, alph=0.5):
     
     width_x_df = df_X.alias("a").join(df_X.alias("b"), how="cross") \
         .selectExpr("(a.X - b.X) * (a.X - b.X) as dist")
-    width_x_value = width_x_df.agg(expr("percentile_approx(dist, 0.5, 1000)").alias("width_x")).select(first("width_x")).collect()[0][0]
-    width_x_value = sqrt(0.5 * width_x_value) if width_x_value > 0 else 1.0
+    width_x_value = width_x_df.agg(expr("percentile_approx(dist, 0.5, 1000)").alias("width_x"))
+    width_x_value = width_x_value.withColumn("width_x", sqrt(lit(0.5) * col("width_x"))).select("width_x")
     
     width_y_df = df_Y.alias("a").join(df_Y.alias("b"), how="cross") \
         .selectExpr("(a.Y - b.Y) * (a.Y - b.Y) as dist")
-    width_y_value = width_y_df.agg(expr("percentile_approx(dist, 0.5, 1000)").alias("width_y")).select(first("width_y")).collect()[0][0]
-    width_y_value = sqrt(0.5 * width_y_value) if width_y_value > 0 else 1.0
+    width_y_value = width_y_df.agg(expr("percentile_approx(dist, 0.5, 1000)").alias("width_y"))
+    width_y_value = width_y_value.withColumn("width_y", sqrt(lit(0.5) * col("width_y"))).select("width_y")
     
     K = compute_rbf_kernel(df_X, df_X, "X", lit(width_x_value)).alias("k")
     L = compute_rbf_kernel(df_Y, df_Y, "Y", lit(width_y_value)).alias("l")
@@ -37,14 +37,15 @@ def hsic_gam(df_X, df_Y, alph=0.5):
         col("varHSIC") * (72 * (n - 4) * (n - 5) / (n * (n - 1) * (n - 2) * (n - 3)))
     )
     
-    muX = K.agg(mean("H").alias("muX")).select(first("muX")).collect()[0][0]
-    muY = L.agg(mean("H").alias("muY")).select(first("muY")).collect()[0][0]
-    mHSIC = (1 + muX * muY - muX - muY) / n
+    muX = K.agg(mean("H").alias("muX"))
+    muY = L.agg(mean("H").alias("muY"))
     
-    al = varHSIC.select((lit(mHSIC ** 2) / col("varHSIC")).alias("al")).select(first("al")).collect()[0][0]
-    bet = varHSIC.select((col("varHSIC") * lit(n) / lit(mHSIC)).alias("bet")).select(first("bet")).collect()[0][0]
+    mHSIC = muX.crossJoin(muY).withColumn("mHSIC", (lit(1) + col("muX") * col("muY") - col("muX") - col("muY")) / lit(n)).select("mHSIC")
     
-    thresh = gamma.ppf(1 - alph, al, scale=bet)
+    al = varHSIC.crossJoin(mHSIC).withColumn("al", (col("mHSIC") ** 2) / col("varHSIC")).select("al")
+    bet = varHSIC.crossJoin(mHSIC).withColumn("bet", (col("varHSIC") * lit(n)) / col("mHSIC")).select("bet")
+    
+    thresh = gamma.ppf(1 - alph, al.collect()[0][0], scale=bet.collect()[0][0])
     
     return testStat, thresh
 
