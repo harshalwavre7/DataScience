@@ -1,0 +1,54 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, expr, mean, sqrt, lit, exp, percentile_approx
+from scipy.stats import gamma
+
+spark = SparkSession.builder.appName("HSIC_PySpark").config("spark.sql.shuffle.partitions", "200").getOrCreate()
+
+def compute_rbf_kernel(df1, df2, col_name, width_value):
+    H = df1.alias("a").join(df2.alias("b"), how="cross")
+    H = H.withColumn("diff", (col(f"a.{col_name}") - col(f"b.{col_name}")) ** 2)
+    H = H.withColumn("H", exp(-col("diff") / (lit(2) * width_value * width_value)))
+    return H.select("H")
+
+def hsic_gam(df_X, df_Y, alph=0.5):
+    n = df_X.count()
+    
+    width_x_df = df_X.alias("a").join(df_X.alias("b"), how="cross") \
+        .selectExpr("(a.X - b.X) * (a.X - b.X) as dist")
+    width_x_value = width_x_df.agg(expr("percentile_approx(dist, 0.5, 1000)").alias("width_x")).first()[0]
+    width_x_value = sqrt(0.5 * width_x_value) if width_x_value > 0 else lit(1.0)
+    
+    width_y_df = df_Y.alias("a").join(df_Y.alias("b"), how="cross") \
+        .selectExpr("(a.Y - b.Y) * (a.Y - b.Y) as dist")
+    width_y_value = width_y_df.agg(expr("percentile_approx(dist, 0.5, 1000)").alias("width_y")).first()[0]
+    width_y_value = sqrt(0.5 * width_y_value) if width_y_value > 0 else lit(1.0)
+    
+    K = compute_rbf_kernel(df_X, df_X, "X", lit(width_x_value)).alias("k")
+    L = compute_rbf_kernel(df_Y, df_Y, "Y", lit(width_y_value)).alias("l")
+    
+    testStat = K.join(L, how="cross").agg(mean(col("k.H") * col("l.H")).alias("testStat"))
+    
+    varHSIC = K.join(L, how="cross") \
+        .withColumn("var", (col("k.H") * col("l.H") / 6) ** 2) \
+        .agg(mean("var").alias("varHSIC"))
+    
+    varHSIC = varHSIC * (72 * (n - 4) * (n - 5) / (n * (n - 1) * (n - 2) * (n - 3)))
+    
+    muX = K.agg(mean("H")).alias("muX")
+    muY = L.agg(mean("H")).alias("muY")
+    mHSIC = (1 + muX * muY - muX - muY) / n
+    
+    al = (mHSIC ** 2) / varHSIC
+    bet = (varHSIC * n) / mHSIC
+    
+    thresh = gamma.ppf(1 - alph, al, scale=bet)
+    
+    return testStat, thresh
+
+# Example usage with PySpark DataFrames
+df_X = spark.read.parquet("X_data.parquet").repartition(200)  # Optimized partitioning
+df_Y = spark.read.parquet("Y_data.parquet").repartition(200)  # Optimized partitioning
+
+test_stat, threshold = hsic_gam(df_X, df_Y)
+print("HSIC Test Statistic:", test_stat)
+print("Threshold:", threshold)
