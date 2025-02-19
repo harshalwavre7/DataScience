@@ -32,14 +32,17 @@ def hsic_gam(df_X, df_Y, alph=0.5):
         .withColumn("var", (col("k.H") * col("l.H") / 6) ** 2) \
         .agg(mean("var").alias("varHSIC"))
     
-    varHSIC = varHSIC * (72 * (n - 4) * (n - 5) / (n * (n - 1) * (n - 2) * (n - 3)))
+    varHSIC = varHSIC.withColumn(
+        "varHSIC",
+        col("varHSIC") * (72 * (n - 4) * (n - 5) / (n * (n - 1) * (n - 2) * (n - 3)))
+    )
     
     muX = K.agg(mean("H")).alias("muX")
     muY = L.agg(mean("H")).alias("muY")
     mHSIC = (1 + muX * muY - muX - muY) / n
     
-    al = (mHSIC ** 2) / varHSIC
-    bet = (varHSIC * n) / mHSIC
+    al = varHSIC.select((mHSIC ** 2 / col("varHSIC")).alias("al")).first()[0]
+    bet = varHSIC.select((col("varHSIC") * n / mHSIC).alias("bet")).first()[0]
     
     thresh = gamma.ppf(1 - alph, al, scale=bet)
     
