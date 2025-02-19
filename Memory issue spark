@@ -1,0 +1,13 @@
+thresh_df = thresh_df.cache()
+thresh_df.count()  # Force Spark to cache
+thresh = thresh_df.select("thresh").limit(1).toPandas()["thresh"].iloc[0]
+
+
+thresh = thresh_df.select("thresh").limit(1).collect()
+if thresh:
+    thresh = thresh[0][0]
+else:
+    thresh = None  # Handle empty case
+
+thresh_df = thresh_df.persist(StorageLevel.MEMORY_AND_DISK)  
+thresh = thresh_df.select("thresh").limit(1).rdd.take(1)[0][0]
