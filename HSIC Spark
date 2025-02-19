@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, expr, mean, sqrt, lit, exp, percentile_approx
+from pyspark.sql.functions import col, expr, mean, sqrt, lit, exp, percentile_approx, first
 from scipy.stats import gamma
 
 spark = SparkSession.builder.appName("HSIC_PySpark").config("spark.sql.shuffle.partitions", "200").getOrCreate()
@@ -15,13 +15,13 @@ def hsic_gam(df_X, df_Y, alph=0.5):
     
     width_x_df = df_X.alias("a").join(df_X.alias("b"), how="cross") \
         .selectExpr("(a.X - b.X) * (a.X - b.X) as dist")
-    width_x_value = width_x_df.agg(expr("percentile_approx(dist, 0.5, 1000)").alias("width_x")).first()[0]
-    width_x_value = sqrt(0.5 * width_x_value) if width_x_value > 0 else lit(1.0)
+    width_x_value = width_x_df.agg(expr("percentile_approx(dist, 0.5, 1000)").alias("width_x")).select(first("width_x")).collect()[0][0]
+    width_x_value = sqrt(0.5 * width_x_value) if width_x_value > 0 else 1.0
     
     width_y_df = df_Y.alias("a").join(df_Y.alias("b"), how="cross") \
         .selectExpr("(a.Y - b.Y) * (a.Y - b.Y) as dist")
-    width_y_value = width_y_df.agg(expr("percentile_approx(dist, 0.5, 1000)").alias("width_y")).first()[0]
-    width_y_value = sqrt(0.5 * width_y_value) if width_y_value > 0 else lit(1.0)
+    width_y_value = width_y_df.agg(expr("percentile_approx(dist, 0.5, 1000)").alias("width_y")).select(first("width_y")).collect()[0][0]
+    width_y_value = sqrt(0.5 * width_y_value) if width_y_value > 0 else 1.0
     
     K = compute_rbf_kernel(df_X, df_X, "X", lit(width_x_value)).alias("k")
     L = compute_rbf_kernel(df_Y, df_Y, "Y", lit(width_y_value)).alias("l")
@@ -37,12 +37,12 @@ def hsic_gam(df_X, df_Y, alph=0.5):
         col("varHSIC") * (72 * (n - 4) * (n - 5) / (n * (n - 1) * (n - 2) * (n - 3)))
     )
     
-    muX = K.agg(mean("H")).alias("muX")
-    muY = L.agg(mean("H")).alias("muY")
+    muX = K.agg(mean("H").alias("muX")).select(first("muX")).collect()[0][0]
+    muY = L.agg(mean("H").alias("muY")).select(first("muY")).collect()[0][0]
     mHSIC = (1 + muX * muY - muX - muY) / n
     
-    al = varHSIC.select((mHSIC ** 2 / col("varHSIC")).alias("al")).first()[0]
-    bet = varHSIC.select((col("varHSIC") * n / mHSIC).alias("bet")).first()[0]
+    al = varHSIC.select((lit(mHSIC ** 2) / col("varHSIC")).alias("al")).select(first("al")).collect()[0][0]
+    bet = varHSIC.select((col("varHSIC") * lit(n) / lit(mHSIC)).alias("bet")).select(first("bet")).collect()[0][0]
     
     thresh = gamma.ppf(1 - alph, al, scale=bet)
     
