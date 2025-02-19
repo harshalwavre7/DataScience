@@ -53,6 +53,7 @@ def hsic_gam(df_X, df_Y, alph=0.5):
     
     thresh = thresh_df.select("thresh").first()[0]
     
+    
     return testStat, thresh
 
 # Example usage with PySpark DataFrames
