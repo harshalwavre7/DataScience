@@ -1,0 +1,12 @@
+
+# Compute width_x using approximate median to avoid collect
+width_x_df = df_X_sample.alias("a").crossJoin(df_X_sample.alias("b"))
+width_x_df = width_x_df.withColumn("dist", (col("a.X") - col("b.X")) ** 2)
+width_x_value = width_x_df.agg(percentile_approx("dist", 0.5, 1000)).collect()[0][0]
+width_x_value = sqrt(0.5 * width_x_value)
+
+# Compute width_y using approximate median to avoid collect
+width_y_df = df_Y_sample.alias("a").crossJoin(df_Y_sample.alias("b"))
+width_y_df = width_y_df.withColumn("dist", (col("a.Y") - col("b.Y")) ** 2)
+width_y_value = width_y_df.agg(percentile_approx("dist", 0.5, 1000)).collect()[0][0]
+width_y_value = sqrt(0.5 * width_y_value)
