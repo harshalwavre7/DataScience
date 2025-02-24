@@ -1,0 +1,79 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, expr, mean, sqrt, lit, exp, percentile_approx
+from scipy.stats import gamma
+
+# Initialize Spark
+spark = SparkSession.builder.appName("HSIC_PySpark").config("spark.sql.shuffle.partitions", "200").getOrCreate()
+
+# Small epsilon to avoid zero division
+EPSILON = 1e-6  
+
+def compute_rbf_kernel(df1, df2, col_name, width_value):
+    if width_value == 0:  # Ensure non-zero bandwidth
+        width_value = EPSILON  
+    H = df1.alias("a").join(df2.alias("b"), how="cross")
+    H = H.withColumn("diff", (col(f"a.{col_name}") - col(f"b.{col_name}")) ** 2)
+    H = H.withColumn("H", exp(-col("diff") / (2 * width_value ** 2)))
+    return H.select("H")
+
+def compute_median_distance(df, col_name):
+    """
+    Computes the median pairwise squared distance and ensures it is nonzero.
+    """
+    width_df = df.alias("a").join(df.alias("b"), how="cross") \
+        .selectExpr(f"(a.{col_name} - b.{col_name}) * (a.{col_name} - b.{col_name}) as dist")
+    
+    width_value = width_df.agg(expr("percentile_approx(dist, 0.5, 10000)").alias("width"))
+    width_value = width_value.withColumn("width", sqrt(0.5 * col("width"))).select("width")
+    
+    width_value = width_value.first()[0]  # Extract scalar value
+    
+    if width_value == 0 or width_value is None:  # Prevent zero bandwidth
+        width_value = EPSILON
+    
+    return width_value
+
+def hsic_gam(df_X, df_Y, alph=0.5):
+    n = df_X.count()
+
+    # Compute widths for kernels
+    width_x_value = compute_median_distance(df_X, "X")
+    width_y_value = compute_median_distance(df_Y, "Y")
+
+    # Compute RBF kernels
+    K = compute_rbf_kernel(df_X, df_X, "X", width_x_value).alias("k")
+    L = compute_rbf_kernel(df_Y, df_Y, "Y", width_y_value).alias("l")
+
+    # Compute test statistic
+    testStat = K.join(L, how="cross").agg(mean(col("k.H") * col("l.H")).alias("testStat")).first()[0]
+
+    # Compute variance
+    varHSIC = K.join(L, how="cross") \
+        .withColumn("var", (col("k.H") * col("l.H") / 6) ** 2) \
+        .agg(mean("var").alias("varHSIC")).first()[0]
+
+    varHSIC = varHSIC * (72 * (n - 4) * (n - 5) / (n * (n - 1) * (n - 2) * (n - 3)))
+
+    # Compute mean HSIC
+    muX = K.agg(mean("H").alias("muX")).first()[0]
+    muY = L.agg(mean("H").alias("muY")).first()[0]
+    
+    mHSIC = (1 + muX * muY - muX - muY) / n
+
+    # Compute gamma distribution parameters
+    al = (mHSIC ** 2) / varHSIC
+    bet = (varHSIC * n) / mHSIC
+
+    # Compute threshold
+    thresh = gamma.ppf(1 - alph, al, scale=bet)
+
+    return testStat, thresh
+
+# Example usage
+df_X = spark.read.parquet("X_data.parquet").repartition(200)  # Optimized partitioning
+df_Y = spark.read.parquet("Y_data.parquet").repartition(200)  # Optimized partitioning
+
+test_stat, threshold = hsic_gam(df_X, df_Y)
+
+print("HSIC Test Statistic:", test_stat)
+print("Threshold:", threshold)
